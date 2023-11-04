@@ -1,28 +1,140 @@
 ---
-title: ""
-author: ""
+title: "Assignment3"
+author: "YangXu"
 format:
   html:
     embed-resources: true
 ---
 
-## Quarto
-
-Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
-
-## Running Code
-
-When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+## Read in the data
+```{r, message=FALSE}
+library(forcats)
+library(tidytext)
+library(dplyr)
+library(ggplot2)
+library(data.table)
+library(tidyr)
+library(DT)
+if (!file.exists("pubmed.csv"))
+  download.file(
+    url = "https://raw.githubusercontent.com/USCbiostats/data-science-data/master/03_pubmed/pubmed.csv",
+    destfile = "pubmed.csv",
+    method   = "libcurl",
+    timeout  = 60
+    )
+pubmed <- read.csv("pubmed.csv")
+```
+# Question 1
+#### Tokenize the abstracts and count the number of each token. Do you see anything interesting? Does removing stop words change what tokens appear as the most frequent? What are the 5 most common tokens for each search term after removing stopwords?
+```{r}
+# Tokenize the abstracts and count the number of each token
+# Then sort by counts
+pubmed %>%
+  unnest_tokens(token,abstract) %>%
+  count(token,sort = TRUE) %>%
+  top_n(10,n)
+```
+#### Checked the 10 most frequently occurring words in the abstract. Most of these 10 words did not provide useful information such as 'the', 'of', 'and'. But there were two relatively meaningful words, 'covid' and '19'.
 
 ```{r}
-1 + 1
-```
+# Removing stop words and search top 5 common words for each term
+# Get all terms of pubmed
+table(pubmed$term)
 
-You can add options to executable code like this
+# For term of 'covid'
+pubmed %>%
+  filter(term == 'covid') %>%
+  unnest_tokens(token,abstract) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(term,token,sort = TRUE) %>%
+  top_n(5,n)
+```
+#### In term of 'covid', the 5 most common tokens were 'covid', '19', 'patients', 'disease' and 'pandemic'.
+```{r}
+# For term of 'cystic fibrosis'
+pubmed %>%
+  filter(term == 'cystic fibrosis') %>%
+  unnest_tokens(token,abstract) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(term,token,sort = TRUE) %>%
+  top_n(5,n)
+```
+#### In term of 'cystic fibrosis', the 5 most common tokens were 'fibrosis', 'cycstic', 'cf', 'patients' and 'disease'.
+```{r}
+# For term of 'meningitis'
+pubmed %>%
+  filter(term == 'meningitis') %>%
+  unnest_tokens(token,abstract) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(term,token,sort = TRUE) %>%
+  top_n(5,n)
+```
+#### In term of 'meningitis', the 5 most common tokens were 'patients', 'meningitis', 'meningeal', 'csf' and 'cilinical'.
+```{r}
+# For term of 'preeclampsia'
+pubmed %>%
+  filter(term == 'preeclampsia') %>%
+  unnest_tokens(token,abstract) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(term,token,sort = TRUE) %>%
+  top_n(5,n)
+```
+#### In term of 'preeclampsia', the 5 most common tokens were 'pre', 'eclampsia', 'preeclampsia', 'women' and 'pregnancy'.
+```{r}
+# For term of 'prostate cancer'
+pubmed %>%
+  filter(term == 'prostate cancer') %>%
+  unnest_tokens(token,abstract) %>%
+  anti_join(stop_words, by = c("token" = "word")) %>%
+  count(term,token,sort = TRUE) %>%
+  top_n(5,n)
+```
+#### In term of 'prostate cancer', the 5 most common tokens were 'cancer', 'prostate', 'patients', 'treatment' and 'disease'.
+
+# Question 2
+#### Tokenize the abstracts into bigrams. Find the 10 most common bigrams and visualize them with ggplot2.
+```{r}
+pubmed %>%
+   unnest_ngrams(ngram, abstract, n = 2) %>%
+  anti_join(stop_words, by = c("ngram" = "word")) %>%
+ count(ngram, sort = T) %>%
+ top_n(10,n) %>%
+ ggplot(aes(n, fct_reorder(ngram, n)))+
+ geom_col()
+```
+#### Above were the 10 most common bigrams in the abstracts. But some of bigrams only consist of stopwords. So next we removed stopwords.
 
 ```{r}
-#| echo: false
-2 * 2
+# Remove stopwords
+pubmed %>%
+  unnest_tokens(bigram, abstract, token = 'ngrams', n = 2) %>%
+  separate(bigram, into = c("word1", "word2"), sep = " ") %>%
+  filter(!word1 %in% stop_words$word, !word2 %in% stop_words$word) %>%
+  unite(bigram, word1, word2, sep = " ") %>%
+  count(bigram, sort = TRUE) %>%
+  top_n(10, n) %>%
+  ggplot(aes(n, fct_reorder(bigram, n)))+
+ geom_col()
 ```
+#### Above were the 10 most common bigrams without stopwords in the abstracts.
 
-The `echo: false` option disables the printing of code (only output is displayed).
+# Question 3
+#### Calculate the TF-IDF value for each word-search term combination (here you want the search term to be the “document”). What are the 5 tokens from each search term with the highest TF-IDF value? How are the results different from the answers you got in question 1?
+```{r}
+# Here we still remove stopwords from our search
+pubmed_tf_idf <- pubmed %>%
+  unnest_tokens(words,abstract) %>%
+  anti_join(stop_words, by = c("words" = "word")) %>%
+  count(words, term) %>%
+  group_by(term)%>%
+  bind_tf_idf(words, term, n) %>%
+  top_n(5, n) %>%
+  arrange(desc(tf_idf))
+
+datatable(pubmed_tf_idf, options = list(pageLength = 5))
+```
+##### Click "term" so the table will be ordered by term
+#### Overall, the 5 tokens from each search term with the highest TF-IDF value were the same as the result from question 1. But the order for each term has changed. This means the most frequently occurring word does not necessarily have the highest TF-IDF value.
+
+
+
